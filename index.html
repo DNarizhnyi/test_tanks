@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Pocket Tanks Клон</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            background-color: #87CEEB;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <h2>Pocket Tanks Клон</h2>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div>
+        <p>Угол: <input type="number" id="angle" value="45" min="0" max="90"> градусов</p>
+        <p>Сила: <input type="number" id="power" value="50" min="1" max="100"></p>
+        <p>Оружие: 
+            <select id="weapon">
+                <option value="0">Обычный снаряд</option>
+                <option value="1">Большой взрыв</option>
+            </select>
+        </p>
+        <button onclick="fire()">Огонь!</button>
+    </div>
+    <p id="turnInfo">Ход игрока 1</p>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Звуки (замените пути на свои файлы)
+        const shotSound = new Audio('Audio/pew.mp3');
+        const explosionSound = new Audio('Audio/boom.mp3');
+
+        // Параметры игры
+        const gravity = 0.1;
+        let currentPlayer = 1;
+        let terrain = [];
+
+        // Оружие
+        const weapons = [
+            { name: "Обычный снаряд", damage: 20, radius: 30 },
+            { name: "Большой взрыв", damage: 40, radius: 50 }
+        ];
+
+        // Танки
+        const tank1 = { x: 100, y: 0, health: 100, color: 'red' };
+        const tank2 = { x: 700, y: 0, health: 100, color: 'blue' };
+        let projectile = null;
+        let explosion = null;
+
+        // Генерация рельефа
+        function generateTerrain() {
+            terrain = [];
+            let height = 350;
+            for (let x = 0; x <= canvas.width; x++) {
+                height += Math.random() * 4 - 2; // Случайные колебания
+                if (height > 380) height = 380;
+                if (height < 300) height = 300;
+                terrain[x] = height;
+            }
+            tank1.y = terrain[tank1.x] - 10;
+            tank2.y = terrain[tank2.x] - 10;
+        }
+
+        // Отрисовка сцены
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Земля
+            ctx.fillStyle = 'green';
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height);
+            for (let x = 0; x <= canvas.width; x++) {
+                ctx.lineTo(x, terrain[x]);
+            }
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.fill();
+
+            // Танк 1
+            ctx.fillStyle = tank1.color;
+            ctx.fillRect(tank1.x - 15, tank1.y - 10, 30, 10);
+
+            // Танк 2
+            ctx.fillStyle = tank2.color;
+            ctx.fillRect(tank2.x - 15, tank2.y - 10, 30, 10);
+
+            // Здоровье
+            ctx.fillStyle = 'black';
+            ctx.font = '16px Arial';
+            ctx.fillText(`HP Игрок 1: ${tank1.health}`, 10, 20);
+            ctx.fillText(`HP Игрок 2: ${tank2.health}`, 650, 20);
+
+            // Снаряд
+            if (projectile) {
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(projectile.x, projectile.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Взрыв
+            if (explosion) {
+                ctx.fillStyle = `rgba(255, 165, 0, ${explosion.alpha})`;
+                ctx.beginPath();
+                ctx.arc(explosion.x, explosion.y, explosion.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Функция выстрела
+        function fire() {
+            if (projectile) return;
+
+            const angle = parseInt(document.getElementById('angle').value) * Math.PI / 180;
+            const power = parseInt(document.getElementById('power').value);
+            const weaponIdx = parseInt(document.getElementById('weapon').value);
+
+            const shooter = currentPlayer === 1 ? tank1 : tank2;
+            const direction = currentPlayer === 1 ? 1 : -1;
+
+            projectile = {
+                x: shooter.x,
+                y: shooter.y - 15,
+                vx: Math.cos(angle) * power * 0.1 * direction,
+                vy: -Math.sin(angle) * power * 0.1,
+                weapon: weapons[weaponIdx]
+            };
+
+            shotSound.play();
+            animateProjectile();
+        }
+
+        // Анимация снаряда
+        function animateProjectile() {
+            if (!projectile) return;
+
+            projectile.x += projectile.vx;
+            projectile.vy += gravity;
+            projectile.y += projectile.vy;
+
+            drawScene();
+
+            if (projectile.y >= terrain[Math.round(projectile.x)] || projectile.x < 0 || projectile.x > canvas.width) {
+                explosion = {
+                    x: projectile.x,
+                    y: terrain[Math.round(projectile.x)],
+                    radius: projectile.weapon.radius,
+                    alpha: 1
+                };
+                checkHit();
+                projectile = null;
+                animateExplosion();
+                return;
+            }
+
+            requestAnimationFrame(animateProjectile);
+        }
+
+        // Анимация взрыва
+        function animateExplosion() {
+            if (!explosion) return;
+
+            explosion.alpha -= 0.05;
+            drawScene();
+
+            if (explosion.alpha <= 0) {
+                explosion = null;
+                switchPlayer();
+                drawScene();
+            } else {
+                requestAnimationFrame(animateExplosion);
+            }
+        }
+
+        // Проверка попадания
+        function checkHit() {
+            const target = currentPlayer === 1 ? tank2 : tank1;
+            const distance = Math.sqrt((projectile.x - target.x) ** 2 + (projectile.y - target.y) ** 2);
+
+            if (distance < projectile.weapon.radius) {
+                target.health -= projectile.weapon.damage;
+                explosionSound.play();
+                if (target.health <= 0) {
+                    alert(`Игрок ${currentPlayer === 1 ? 2 : 1} победил!`);
+                    resetGame();
+                }
+            }
+        }
+
+        // Смена игрока
+        function switchPlayer() {
+            currentPlayer = currentPlayer === 1 ? 2 : 1;
+            document.getElementById('turnInfo').textContent = `Ход игрока ${currentPlayer}`;
+        }
+
+        // Сброс игры
+        function resetGame() {
+            tank1.health = 100;
+            tank2.health = 100;
+            currentPlayer = 1;
+            generateTerrain();
+            document.getElementById('turnInfo').textContent = `Ход игрока 1`;
+            drawScene();
+        }
+
+        // Инициализация
+        generateTerrain();
+        drawScene();
+    </script>
+</body>
+</html>
